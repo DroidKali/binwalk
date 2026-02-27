@@ -55,7 +55,7 @@ jobs:
           retention-days: 14
 
   build-linux-aarch64:
-    name: Linux aarch64
+    name: Linux aarch64 (glibc)
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout repository
@@ -86,8 +86,55 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: binwalk-linux-aarch64
+          name: binwalk-linux-aarch64-gnu
           path: target/aarch64-unknown-linux-gnu/release/binwalk
+          retention-days: 14
+
+  build-linux-aarch64-musl:
+    name: Linux aarch64 (musl)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: aarch64-unknown-linux-musl
+
+      - name: Install cross-compilation tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            musl-tools \
+            musl-dev \
+            crossbuild-essential-arm64
+
+      - name: Install musl cross toolchain
+        run: |
+          sudo apt-get install -y \
+            liblzma-dev:arm64 \
+            libbz2-dev:arm64 \
+            zlib1g-dev:arm64 \
+            libssl-dev:arm64 \
+            libfontconfig1-dev:arm64 || true
+
+      - name: Build release binary
+        run: |
+          export CC=aarch64-linux-gnu-gcc \
+                 CXX=aarch64-linux-gnu-g++ \
+                 AR=aarch64-linux-gnu-ar \
+                 RANLIB=aarch64-linux-gnu-ranlib
+          cargo build --release --target aarch64-unknown-linux-musl
+
+      - name: Strip binary
+        run: aarch64-linux-gnu-strip target/aarch64-unknown-linux-musl/release/binwalk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binwalk-linux-aarch64-musl
+          path: target/aarch64-unknown-linux-musl/release/binwalk
           retention-days: 14
 
   # ============================================================================
@@ -199,6 +246,7 @@ jobs:
     needs:
       - build-linux-x86_64
       - build-linux-aarch64
+      - build-linux-aarch64-musl
       - build-macos-x86_64
       - build-macos-aarch64
       - build-windows-x86_64
