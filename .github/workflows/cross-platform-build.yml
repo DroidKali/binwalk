@@ -1,0 +1,231 @@
+name: Cross-Platform Build
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+    branches:
+      - master
+      - main
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ============================================================================
+  # Linux Builds
+  # ============================================================================
+  build-linux-x86_64:
+    name: Linux x86_64
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: x86_64-unknown-linux-gnu
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libfontconfig1-dev \
+            liblzma-dev \
+            libbz2-dev \
+            zlib1g-dev \
+            libssl-dev
+
+      - name: Build release binary
+        run: cargo build --release --target x86_64-unknown-linux-gnu
+
+      - name: Strip binary
+        run: strip target/x86_64-unknown-linux-gnu/release/binwalk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binwalk-linux-x86_64
+          path: target/x86_64-unknown-linux-gnu/release/binwalk
+          retention-days: 14
+
+  build-linux-aarch64:
+    name: Linux aarch64
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: aarch64-unknown-linux-gnu
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libfontconfig1-dev \
+            liblzma-dev \
+            libbz2-dev \
+            zlib1g-dev \
+            libssl-dev
+
+      - name: Build release binary
+        run: cargo build --release --target aarch64-unknown-linux-gnu
+
+      - name: Strip binary
+        run: strip target/aarch64-unknown-linux-gnu/release/binwalk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binwalk-linux-aarch64
+          path: target/aarch64-unknown-linux-gnu/release/binwalk
+          retention-days: 14
+
+  # ============================================================================
+  # macOS Builds
+  # ============================================================================
+  build-macos-x86_64:
+    name: macOS x86_64
+    runs-on: macOS-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: x86_64-apple-darwin
+
+      - name: Build release binary
+        run: cargo build --release --target x86_64-apple-darwin
+
+      - name: Strip binary
+        run: strip target/x86_64-apple-darwin/release/binwalk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binwalk-macos-x86_64
+          path: target/x86_64-apple-darwin/release/binwalk
+          retention-days: 14
+
+  build-macos-aarch64:
+    name: macOS aarch64 (Apple Silicon)
+    runs-on: macOS-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: aarch64-apple-darwin
+
+      - name: Build release binary
+        run: cargo build --release --target aarch64-apple-darwin
+
+      - name: Strip binary
+        run: strip target/aarch64-apple-darwin/release/binwalk
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binwalk-macos-aarch64
+          path: target/aarch64-apple-darwin/release/binwalk
+          retention-days: 14
+
+  # ============================================================================
+  # Windows Builds
+  # ============================================================================
+  build-windows-x86_64:
+    name: Windows x86_64
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: x86_64-pc-windows-msvc
+
+      - name: Build release binary
+        run: cargo build --release --target x86_64-pc-windows-msvc
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binwalk-windows-x86_64
+          path: target/x86_64-pc-windows-msvc/release/binwalk.exe
+          retention-days: 14
+
+  build-windows-aarch64:
+    name: Windows aarch64
+    runs-on: windows-11-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: aarch64-pc-windows-msvc
+
+      - name: Build release binary
+        run: cargo build --release --target aarch64-pc-windows-msvc
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binwalk-windows-aarch64
+          path: target/aarch64-pc-windows-msvc/release/binwalk.exe
+          retention-days: 14
+
+  # ============================================================================
+  # Create Release Archive (on tag)
+  # ============================================================================
+  create-release-artifacts:
+    name: Create Release Archives
+    runs-on: ubuntu-24.04
+    needs:
+      - build-linux-x86_64
+      - build-linux-aarch64
+      - build-macos-x86_64
+      - build-macos-aarch64
+      - build-windows-x86_64
+      - build-windows-aarch64
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create release archives
+        run: |
+          cd artifacts
+          for dir in */; do
+            platform_name="${dir%/}"
+            if [[ "$platform_name" == *"windows"* ]]; then
+              zip -r "${platform_name}.zip" "$dir"
+            else
+              tar -czvf "${platform_name}.tar.gz" "$dir"
+            fi
+          done
+
+      - name: Upload release archives
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.tar.gz
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
